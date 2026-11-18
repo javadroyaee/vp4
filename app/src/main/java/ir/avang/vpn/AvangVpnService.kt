@@ -7,33 +7,37 @@ import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
-import libv2ray.Libv2ray
-import libv2ray.V2RayPoint
-import libv2ray.V2RayVPNServiceSupportsSet
+import libv2ray.CoreCallbackHandler
+import libv2ray.CoreController
 import java.io.File
 
 class AvangVpnService : VpnService() {
 
     private var vpnInterface: ParcelFileDescriptor? = null
-    private var v2rayPoint: V2RayPoint? = null
+    private var coreController: CoreController? = null
     private var tun2SocksProcess: Process? = null
+
+    // استفاده از CoreCallbackHandler به جای V2RayVPNServiceSupportsSet
+    private val callbackHandler = object : CoreCallbackHandler {
+        override fun Startup(): Int {
+            // هسته با موفقیت راه‌اندازی شد
+            return 0
+        }
+        override fun Shutdown(): Int {
+            // هسته متوقف شد
+            return 0
+        }
+        override fun OnEmitStatus(status: Int, msg: String?): Int {
+            // وضعیت را می‌توانید به UI ارسال کنید
+            return 0
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        Libv2ray.initV2Env(filesDir.absolutePath, "")
-        v2rayPoint = Libv2ray.newV2RayPoint(object : V2RayVPNServiceSupportsSet {
-            override fun Setup(Conf: String): Int = 0
-            override fun Prepare(): Int = 0
-            override fun Shutdown(): Int {
-                stopVpn()
-                return 0
-            }
-            override fun Protect(fd: Int): Int {
-                return if (this@AvangVpnService.protect(fd)) 0 else -1
-            }
-            override fun OnEmitStatus(status: Int, msg: String?): Int = 0
-        }, false)
+        // مقداردهی اولیه CoreController
+        coreController = CoreController(callbackHandler)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -53,9 +57,8 @@ class AvangVpnService : VpnService() {
     private fun startXrayTunnel(xrayJson: String) {
         stopTunnelOnly()
         try {
-            v2rayPoint?.configureFileContent = xrayJson
-            v2rayPoint?.domainName = "127.0.0.1:10808"
-            v2rayPoint?.runLoop()
+            // استفاده از CoreController برای شروع
+            coreController?.startLoop(xrayJson)
 
             val builder = Builder()
                 .setSession("Avang VPN")
@@ -67,7 +70,10 @@ class AvangVpnService : VpnService() {
                 .addDisallowedApplication(packageName)
 
             vpnInterface = builder.establish()
-            val fd = vpnInterface?.fd ?: return
+            val fd = vpnInterface?.fd ?: run {
+                coreController?.stopLoop()
+                return
+            }
 
             val tunBin = File(applicationInfo.nativeLibraryDir, "libtun2socks.so")
             if (tunBin.exists()) {
@@ -90,9 +96,7 @@ class AvangVpnService : VpnService() {
             tun2SocksProcess = null
         } catch (_: Exception) {}
         try {
-            if (v2rayPoint?.isRunning == true) {
-                v2rayPoint?.stopLoop()
-            }
+            coreController?.stopLoop()
         } catch (_: Exception) {}
         try {
             vpnInterface?.close()
