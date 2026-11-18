@@ -17,26 +17,15 @@ class AvangVpnService : VpnService() {
     private var coreController: CoreController? = null
     private var tun2SocksProcess: Process? = null
 
-    // استفاده از CoreCallbackHandler به جای V2RayVPNServiceSupportsSet
     private val callbackHandler = object : CoreCallbackHandler {
-        override fun Startup(): Int {
-            // هسته با موفقیت راه‌اندازی شد
-            return 0
-        }
-        override fun Shutdown(): Int {
-            // هسته متوقف شد
-            return 0
-        }
-        override fun OnEmitStatus(status: Int, msg: String?): Int {
-            // وضعیت را می‌توانید به UI ارسال کنید
-            return 0
-        }
+        override fun Startup(): Int = 0
+        override fun Shutdown(): Int = 0
+        override fun OnEmitStatus(status: Int, msg: String?): Int = 0
     }
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        // مقداردهی اولیه CoreController
         coreController = CoreController(callbackHandler)
     }
 
@@ -57,7 +46,6 @@ class AvangVpnService : VpnService() {
     private fun startXrayTunnel(xrayJson: String) {
         stopTunnelOnly()
         try {
-            // استفاده از CoreController برای شروع
             coreController?.startLoop(xrayJson)
 
             val builder = Builder()
@@ -91,17 +79,9 @@ class AvangVpnService : VpnService() {
     }
 
     private fun stopTunnelOnly() {
-        try {
-            tun2SocksProcess?.destroy()
-            tun2SocksProcess = null
-        } catch (_: Exception) {}
-        try {
-            coreController?.stopLoop()
-        } catch (_: Exception) {}
-        try {
-            vpnInterface?.close()
-            vpnInterface = null
-        } catch (_: Exception) {}
+        try { tun2SocksProcess?.destroy(); tun2SocksProcess = null } catch (_: Exception) {}
+        try { coreController?.stopLoop() } catch (_: Exception) {}
+        try { vpnInterface?.close(); vpnInterface = null } catch (_: Exception) {}
     }
 
     private fun stopVpn() {
