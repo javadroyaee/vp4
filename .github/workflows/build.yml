@@ -1,0 +1,57 @@
+name: Build and Release Signed APK
+
+on:
+  push:
+    branches: [ "main" ]
+    tags: [ "v*" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: "temurin"
+          java-version: "17"
+      - name: Download Xray Core and Tun2Socks Dynamically
+        run: |
+          mkdir -p app/libs app/src/main/jniLibs/arm64-v8a
+          
+          # استفاده از jq برای استخراج دقیق لینک AAR
+          AAR_URL=$(curl -s https://api.github.com/repos/2dust/AndroidLibXrayLite/releases/latest | jq -r '.assets[] | select(.name | endswith(".aar")) | .browser_download_url' | head -n 1)
+          if [ -z "$AAR_URL" ] || [ "$AAR_URL" = "null" ]; then echo "AAR_URL NOT FOUND"; exit 1; fi
+          curl -fL -o app/libs/libv2ray.aar "$AAR_URL"
+          
+          # استخراج لینک tun2socks android-arm64
+          T2S_URL=$(curl -s https://api.github.com/repos/xjasonlyu/tun2socks/releases/latest | jq -r '.assets[] | select(.name | contains("android-arm64")) | .browser_download_url' | head -n 1)
+          if [ -z "$T2S_URL" ] || [ "$T2S_URL" = "null" ]; then echo "T2S_URL NOT FOUND"; exit 1; fi
+          curl -fL -o t2s.zip "$T2S_URL"
+          unzip -o t2s.zip -d t2s_tmp
+          mv t2s_tmp/*tun2socks* app/src/main/jniLibs/arm64-v8a/libtun2socks.so
+          chmod +x app/src/main/jniLibs/arm64-v8a/libtun2socks.so
+      - name: Generate Release Keystore
+        run: keytool -genkey -v -keystore app/release.keystore -alias avangkey -keyalg RSA -keysize 2048 -validity 10000 -storepass avangvpnpass -keypass avangvpnpass -dname "CN=AvangVPN"
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.5"
+      - name: Build APK
+        run: gradle assembleRelease --stacktrace
+      - name: Rename APK
+        run: cp app/build/outputs/apk/release/app-release.apk Avang-VPN-Release.apk
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Avang-VPN-Release-APK
+          path: Avang-VPN-Release.apk
+      - name: Publish Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Avang-VPN-Release.apk
+          name: Avang VPN ${{ github.ref_name }}
