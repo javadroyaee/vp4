@@ -1,0 +1,3 @@
+-keep class ir.avang.vpn.** { *; }
+-keep class libv2ray.** { *; }
+-keep class go.** { *; }
